@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""
+mrls - Wrapper for `mr` multiple repository tool
+https://myrepos.branchable.com/
+
+Summary
+
+mrls - list repos. by device and groups defined in /.mrconfig
+mrls myGroup - list repos in myGroup
+mrls myGroup staus - run mr status on each member of myGroup
+
+`mr` can be confused by symlinks across devices, so `mrls` shows lines like
+
+N=47  mr -d /mnt/edata
+N=2   mr -d /mnt/usr1
+snnm pypanart drifters
+
+to show there are 47 repos. under the real path /mnt/edata, and 2 under
+the real path /mnt/usr1.  Output also shows three group names.
+
+`mrls` lists groups defined in ~/.mrconfig, a `mrls` extension to `mr`.
+Groups are defined by `groups = group1 group2 ...` lines in ~/.mrconfig.
+
+    mrls mygrp status -uno
+
+would generate a shell command to run `mr` on only the repos. which are
+members of `mygrp`.  Running under Gnu Screen, the command will be stuffed
+into the command line waiting for you to hit enter.  Otherwise the command
+will just be printed and you must copy / paste it to run it.
+
+The group command will look like:
+
+echo repo1 repo2 | tr ' ' \\n | xargs -I_GRP_ mr -d /a/path/_GRP_ status -uno
+
+which breaks down as follows:
+
+echo repo1 repo2
+  a list of the unique parts of the path to each repo
+tr ' ' \\n
+  turns the list separators into newlines for xargs
+-I _GRP_
+  defines _GRP_ as the part of the command that will be
+  substituted for each group member
+/a/path/
+  the common prefix path for all group members
+
+Terry N. Brown terrynbrown@gmail.com Tue Feb 12 10:37:22 CST 2019
+"""
+
+import argparse
+import os
+import subprocess
+from collections import defaultdict
+from configparser import ConfigParser
+
+
+def make_parser():
+    """Generate a command parser, mostly so `mrls -h` shows help"""
+    parser = argparse.ArgumentParser(
+        description="""
+Wrapper for `mr` multiple repository tool https://myrepos.branchable.com/
+
+Just `mrls` to list repos. of different devices, and list groups.
+
+`mrls <groupname> <group command>` to run command on group memebers. E.g.
+
+    mrls mygrp status -uno
+
+Define groups with `groups = group1 group2` lines in ~/.mrconfig.
+        """.strip(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    parser.add_argument(
+        "group_cmd",
+        nargs=argparse.REMAINDER,  # collect remaining arguments in list
+        help="Command to run on group members",
+        metavar="GROUP CMD",
+    )
+    return parser
+
+
+def main():
+
+    opt = make_parser().parse_args()
+    group_cmd = opt.group_cmd
+
+    config = ConfigParser()
+    config.read(os.path.expanduser("~/.mrconfig"))
+
+    home = os.path.expanduser("~")
+    count = defaultdict(lambda: 0)  # count repos on devices
+    groups = defaultdict(list)  # group to paths mapping
+
+    for section in config.sections():
+        path = os.path.join(home, section)
+        fullpath = os.path.realpath(path)
+        path = fullpath
+        try:
+            stat = os.stat(path)
+            dev = stat.st_dev
+            while len(path) > 1 and stat.st_dev == dev:
+                parent = os.path.dirname(path)
+                stat = os.stat(parent)
+                if stat.st_dev == dev:
+                    path = parent
+        except FileNotFoundError:
+            path = 'NOT_ON_THIS_SYSTEM'
+
+        count[path] += 1
+
+        if 'groups' in config[section]:
+            for group in config[section]['groups'].split():
+                groups[group].append(fullpath)
+
+    if group_cmd and len(group_cmd) == 1:  # just list group members
+        group = group_cmd.pop(0)
+        print("\n".join(groups[group]))
+    elif group_cmd:  # prepare and show group shell command
+        group = group_cmd.pop(0)
+        paths = groups[group]
+        common = os.path.commonprefix(paths)
+        uncommon = [i[len(common) :] for i in paths]
+        cmd = (
+            r"echo {uncommon} | tr ' ' \\n | xargs -I{group} "
+            "mr -d {common}{group} {cmd}".format(
+                common=common,
+                uncommon=' '.join(uncommon),
+                group="_%s_" % group.upper(),
+                cmd=' '.join(group_cmd),
+            )
+        )
+        if os.environ.get('STY'):  # running screen, push cmd into command line
+            proc = subprocess.Popen(
+                ['screen', '-X', 'stuff', cmd.replace('\\', '\\\\')]
+            )
+            proc.communicate()
+        else:
+            print(cmd)
+    else:  # just list devices and groups
+        for path in sorted(count):
+            print("N=%s mr -d %s " % (str(count[path]).ljust(3), path))
+        print(' '.join(groups))
+
+
+if __name__ == "__main__":
+    main()
