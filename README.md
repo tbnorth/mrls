@@ -2,6 +2,8 @@
 
 Wrapper for `mr` multiple repository tool to handle groups and symlinks over devices
 
+Following notes assume a symlink on your path from `mrls` to [`mrls.py`](./mrls.py)
+
 ```
 mrls - Wrapper for `mr` multiple repository tool
 https://myrepos.branchable.com/
