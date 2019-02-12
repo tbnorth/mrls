@@ -7,7 +7,7 @@ Summary
 
 mrls - list repos. by device and groups defined in /.mrconfig
 mrls myGroup - list repos in myGroup
-mrls myGroup staus - run mr status on each member of myGroup
+mrls myGroup status - run mr status on each member of myGroup
 
 `mr` can be confused by symlinks across devices, so `mrls` shows lines like
 
