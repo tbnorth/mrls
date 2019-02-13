@@ -112,7 +112,7 @@ def get_opt():
         open(group_path, 'w').write(opt.use)
     if os.path.exists(group_path):
         group = open(group_path).read()
-        print("Note: used mrls --use-all to stop using group '%s'" % group)
+        print("\nNote: use mrls --use-all to stop using group '%s'\n" % group)
         opt.group_cmd = [group] + (opt.group_cmd or [])
     return opt
 
