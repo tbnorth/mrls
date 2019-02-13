@@ -77,12 +77,49 @@ Define groups with `groups = group1 group2` lines in ~/.mrconfig.
         help="Command to run on group members",
         metavar="GROUP CMD",
     )
+    parser.add_argument(
+        "--use",
+        help="Use this group for all commands implicitly. "
+        "This is *persistent* until --use-all is used.",
+        metavar="GROUP",
+    )
+    parser.add_argument(
+        "--use-all", help="Reset effect of --use GROUP.", action='store_true'
+    )
     return parser
+
+
+def get_opt():
+
+    opt = make_parser().parse_args()
+    group_path = os.path.expanduser("~/.mrconfig_group")
+    if opt.use_all:
+        if opt.use:
+            print("Don't mix --use and --use-all")
+            exit(10)
+        elif os.path.exists(group_path):
+            os.unlink(group_path)
+            print("Group cleared, using all repos.")
+        else:
+            print("No group set, already using all repos.")
+        if opt.group_cmd:
+            print(
+                "\nmrls only sends commands to groups, did you mean "
+                "\nmr %s\n" % (' '.join(opt.group_cmd))
+            )
+            opt.group_cmd = None
+    if opt.use:
+        open(group_path, 'w').write(opt.use)
+    if os.path.exists(group_path):
+        group = open(group_path).read()
+        print("Note: used mrls --use-all to stop using group '%s'" % group)
+        opt.group_cmd = [group] + (opt.group_cmd or [])
+    return opt
 
 
 def main():
 
-    opt = make_parser().parse_args()
+    opt = get_opt()
     group_cmd = opt.group_cmd
 
     config = ConfigParser()
@@ -138,9 +175,10 @@ def main():
         else:
             print(cmd)
     else:  # just list devices and groups
+        print("Repos. by drive:")
         for path in sorted(count):
             print("N=%s mr -d %s " % (str(count[path]).ljust(3), path))
-        print(' '.join(groups))
+        print("Groups: " + ' '.join(groups))
 
 
 if __name__ == "__main__":
