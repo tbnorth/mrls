@@ -80,11 +80,11 @@ Define groups with `groups = group1 group2` lines in ~/.mrconfig.
     parser.add_argument(
         "--use",
         help="Use this group for all commands implicitly. "
-        "This is *persistent* until --use-all is used.",
+        "This is *persistent* until --all is used.",
         metavar="GROUP",
     )
     parser.add_argument(
-        "--use-all", help="Reset effect of --use GROUP.", action='store_true'
+        "--all", help="Reset effect of --use GROUP.", action='store_true'
     )
     return parser
 
@@ -93,9 +93,9 @@ def get_opt():
 
     opt = make_parser().parse_args()
     group_path = os.path.expanduser("~/.mrconfig_group")
-    if opt.use_all:
+    if opt.all:
         if opt.use:
-            print("Don't mix --use and --use-all")
+            print("Don't mix --use and --all")
             exit(10)
         elif os.path.exists(group_path):
             os.unlink(group_path)
@@ -112,8 +112,10 @@ def get_opt():
         open(group_path, 'w').write(opt.use)
     if os.path.exists(group_path):
         group = open(group_path).read()
-        print("\nNote: use mrls --use-all to stop using group '%s'\n" % group)
+        print("\nNote: use mrls --all to stop using group '%s'\n" % group)
         opt.group_cmd = [group] + (opt.group_cmd or [])
+    if opt.group_cmd and '--' in opt.group_cmd:
+        opt.group_cmd.remove('--')
     return opt
 
 
