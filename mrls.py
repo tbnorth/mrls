@@ -50,8 +50,10 @@ Terry N. Brown terrynbrown@gmail.com Tue Feb 12 10:37:22 CST 2019
 import argparse
 import os
 import subprocess
+import sys
 from collections import defaultdict
 from configparser import ConfigParser
+from tempfile import mkstemp
 
 
 def make_parser():
@@ -66,7 +68,8 @@ Just `mrls` to list repos. of different devices, and list groups.
 
     mrls mygrp status -uno
 
-Define groups with `groups = group1 group2` lines in ~/.mrconfig.
+Define groups with `groups = group1 group2` lines in ~/.mrconfig.  The group
+`ALL` is automatically defined as the list of all repos., spanning devices.
         """.strip(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -80,7 +83,7 @@ Define groups with `groups = group1 group2` lines in ~/.mrconfig.
     parser.add_argument(
         "--use",
         help="Use this group for all commands implicitly. "
-        "This is *persistent* until --all is used.",
+        "This is *persistent* until --all is used (except for `ALL`).",
         metavar="GROUP",
     )
     parser.add_argument(
@@ -95,28 +98,59 @@ def get_opt():
     group_path = os.path.expanduser("~/.mrconfig_group")
     if opt.all:
         if opt.use:
-            print("Don't mix --use and --all")
+            sys.stderr.write("Don't mix --use and --all\n")
             exit(10)
         elif os.path.exists(group_path):
             os.unlink(group_path)
-            print("Group cleared, using all repos.")
+            sys.stderr.write("Group cleared, using all repos.\n")
         else:
-            print("No group set, already using all repos.")
+            sys.stderr.write("No group set, already using all repos.\n")
         if opt.group_cmd:
-            print(
-                "\nmrls only sends commands to groups, did you mean "
-                "\nmr %s\n" % (' '.join(opt.group_cmd))
+            sys.stderr.write(
+                "\nmrls only sends commands to groups, did you mean"
+                "\nmr %s\n\n" % (' '.join(opt.group_cmd))
             )
             opt.group_cmd = None
-    if opt.use:
-        open(group_path, 'w').write(opt.use)
-    if os.path.exists(group_path):
-        group = open(group_path).read()
-        print("\nNote: use mrls --all to stop using group '%s'\n" % group)
-        opt.group_cmd = [group] + (opt.group_cmd or [])
+    if opt.use == 'ALL':
+        opt.group_cmd = ['ALL'] + (opt.group_cmd or [])
+    else:
+        if opt.use:
+            open(group_path, 'w').write(opt.use)
+        if os.path.exists(group_path):
+            group = open(group_path).read()
+            sys.stderr.write(
+                "\nNote: use mrls --all to stop using group '%s'\n\n" % group
+            )
+            opt.group_cmd = [group] + (opt.group_cmd or [])
     if opt.group_cmd and '--' in opt.group_cmd:
         opt.group_cmd.remove('--')
     return opt
+
+
+def get_cmd(group, paths, common, uncommon, group_cmd):
+    """build command"""
+    cmd = (
+        r"echo {uncommon} | tr ' ' \\n | xargs -I{group} "
+        "mr -d {common}{group} {cmd}".format(
+            common=common,
+            uncommon=' '.join(uncommon),
+            group="_%s_" % group.upper(),
+            cmd=' '.join(group_cmd),
+        )
+    )
+    if len(cmd) > 240:
+        fd, filepath = mkstemp(suffix='.lst', prefix='mrls_')
+        tmp = os.fdopen(fd, 'w')
+        tmp.write("%s\n" % '\n'.join(paths))
+        tmp.close()
+        cmd = r"xargs <{filepath} -I{group} " "mr -d {group} {cmd}".format(
+            common=common,
+            uncommon=' '.join(uncommon),
+            group="_%s_" % group.upper(),
+            cmd=' '.join(group_cmd),
+            filepath=filepath,
+        )
+    return cmd
 
 
 def main():
@@ -151,6 +185,7 @@ def main():
         if 'groups' in config[section]:
             for group in config[section]['groups'].split():
                 groups[group].append(fullpath)
+        groups['ALL'].append(fullpath)
 
     if group_cmd and len(group_cmd) == 1:  # just list group members
         group = group_cmd.pop(0)
@@ -160,15 +195,7 @@ def main():
         paths = groups[group]
         common = os.path.commonprefix(paths)
         uncommon = [i[len(common) :] for i in paths]
-        cmd = (
-            r"echo {uncommon} | tr ' ' \\n | xargs -I{group} "
-            "mr -d {common}{group} {cmd}".format(
-                common=common,
-                uncommon=' '.join(uncommon),
-                group="_%s_" % group.upper(),
-                cmd=' '.join(group_cmd),
-            )
-        )
+        cmd = get_cmd(group, paths, common, uncommon, group_cmd)
         if os.environ.get('STY'):  # running screen, push cmd into command line
             proc = subprocess.Popen(
                 ['screen', '-X', 'stuff', cmd.replace('\\', '\\\\')]
