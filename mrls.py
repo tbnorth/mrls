@@ -129,11 +129,12 @@ def get_opt():
 
 def get_cmd(group, paths, common, uncommon, group_cmd):
     """build command"""
+    uncommon = ' '.join((repr(i) if i else """'""'""") for i in uncommon)
     cmd = (
         r"echo {uncommon} | tr ' ' \\n | xargs -I{group} "
         "mr -d {common}{group} {cmd}".format(
             common=common,
-            uncommon=' '.join(uncommon),
+            uncommon=uncommon,
             group="_%s_" % group.upper(),
             cmd=' '.join(group_cmd),
         )
@@ -145,7 +146,7 @@ def get_cmd(group, paths, common, uncommon, group_cmd):
         tmp.close()
         cmd = r"xargs <{filepath} -I{group} " "mr -d {group} {cmd}".format(
             common=common,
-            uncommon=' '.join(uncommon),
+            uncommon=uncommon,
             group="_%s_" % group.upper(),
             cmd=' '.join(group_cmd),
             filepath=filepath,
